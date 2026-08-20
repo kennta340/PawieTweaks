@@ -1,0 +1,8 @@
+## Interface: 30300
+## Title: Pawie Tweaks
+## Notes: A lightweight QoL addon for World Map improvements, auto-questing, and UI cleanups.
+## Author: Pawie
+## Version: 1.0
+## SavedVariables: PawieTweaksDB
+
+Pawie_Tweaks.lua
