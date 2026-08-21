@@ -1,5 +1,5 @@
 -- ==========================================
--- PAWIE TWEAKS - v2.47
+-- PAWIE TWEAKS - v2.60
 -- ==========================================
 local addonName, PT = ...
 local coreFrame = CreateFrame("Frame")
@@ -131,7 +131,8 @@ local function InitBackgroundQoL()
             editBox:HookScript("OnShow", function(self)
                 local inInstance, instanceType = IsInInstance()
                 if inInstance and instanceType == "pvp" then
-                    if self:GetAttribute("chatType") == "SAY" then
+                    local cType = self:GetAttribute("chatType")
+                    if cType == "SAY" or cType == "PARTY" or cType == "RAID" then
                         self:SetAttribute("chatType", "BATTLEGROUND")
                         ChatEdit_UpdateHeader(self)
                     end
@@ -142,7 +143,7 @@ local function InitBackgroundQoL()
 end
 
 -- ==========================================
--- MODULE: Ascension Auto-Transmog (Soulbound)
+-- MODULE: Ascension Auto-Transmog & Bag Icons
 -- ==========================================
 local function InitAutoTransmog()
     local tmogFrame = CreateFrame("Frame")
@@ -208,10 +209,83 @@ local function InitAutoTransmog()
             end
         end
     end)
+
+    if ContainerFrame_Update then
+        hooksecurefunc("ContainerFrame_Update", function(self)
+            local bag = self:GetID()
+            local name = self:GetName()
+            for i = 1, self.size do
+                local itemButton = _G[name .. "Item" .. i]
+                if itemButton then
+                    if not itemButton.ptTmogIcon then
+                        itemButton.ptTmogIcon = itemButton:CreateTexture(nil, "OVERLAY")
+                        itemButton.ptTmogIcon:SetSize(14, 14)
+                        itemButton.ptTmogIcon:SetPoint("BOTTOMLEFT", itemButton, "BOTTOMLEFT", 2, 2)
+                        itemButton.ptTmogIcon:SetTexture("Interface\\Icons\\INV_Chest_Cloth_17")
+                        itemButton.ptTmogIcon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+                    end
+                    
+                    itemButton.ptTmogIcon:Hide()
+                    
+                    if PawieTweaksDB.autoTransmog then
+                        local slot = itemButton:GetID()
+                        local itemID = GetContainerItemID(bag, slot)
+                        if itemID and C_AppearanceCollection and C_Appearance then
+                            local appID = C_Appearance.GetItemAppearanceID(itemID)
+                            if appID and not C_AppearanceCollection.IsAppearanceCollected(appID) then
+                                itemButton.ptTmogIcon:Show()
+                            end
+                        end
+                    end
+                end
+            end
+        end)
+    end
+
+    if SetItemButtonTexture then
+        hooksecurefunc("SetItemButtonTexture", function(button, texture)
+            if not button or not button.IsObjectType or not button:IsObjectType("Button") then return end
+            
+            local bag, slot
+            if type(button.GetBag) == "function" then
+                bag = button:GetBag()
+            elseif type(button.bag) == "number" then
+                bag = button.bag
+            elseif button.GetParent and button:GetParent() and button:GetParent().GetID then
+                bag = button:GetParent():GetID()
+            end
+            
+            if button.GetID then
+                slot = button:GetID()
+            end
+            
+            if type(bag) == "number" and bag >= 0 and bag <= 4 and type(slot) == "number" and slot >= 1 and slot <= 36 then
+                if not button.ptTmogIcon then
+                    button.ptTmogIcon = button:CreateTexture(nil, "OVERLAY")
+                    button.ptTmogIcon:SetSize(14, 14)
+                    button.ptTmogIcon:SetPoint("BOTTOMLEFT", button, "BOTTOMLEFT", 2, 2)
+                    button.ptTmogIcon:SetTexture("Interface\\Icons\\INV_Chest_Cloth_17")
+                    button.ptTmogIcon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+                end
+                
+                button.ptTmogIcon:Hide()
+                
+                if PawieTweaksDB.autoTransmog then
+                    local itemID = GetContainerItemID(bag, slot)
+                    if itemID and C_AppearanceCollection and C_Appearance then
+                        local appID = C_Appearance.GetItemAppearanceID(itemID)
+                        if appID and not C_AppearanceCollection.IsAppearanceCollected(appID) then
+                            button.ptTmogIcon:Show()
+                        end
+                    end
+                end
+            end
+        end)
+    end
 end
 
 -- ==========================================
--- MODULE: Raid Frame Tweaks
+-- MODULE: Raid Frame Tweaks (The "Sticky Note" Method)
 -- ==========================================
 local function InitRaidFrameTweaks()
     local incomingRes = {}
@@ -224,70 +298,120 @@ local function InitRaidFrameTweaks()
     end
     resSpells["Millhouse's Regeneration Matrix"] = true
 
-    local function UpdatePulloutButtonTweaks(button)
-        if not button then return end
-        local unit = button.unit or button:GetAttribute("unit")
-        if not unit or not UnitExists(unit) then return end
-
-        if not button.ptTweaksFrame then
-            button.ptTweaksFrame = CreateFrame("Frame", nil, button)
-            button.ptTweaksFrame:SetAllPoints(button)
-            button.ptTweaksFrame:SetFrameStrata("HIGH")
+    -- Vi skapar en databas för våra "Post-it lappar"
+    local overlays = {}
+    local function GetOverlay(id)
+        if not overlays[id] then
+            -- Rutorna tillhör skärmen, inte raidmenyn!
+            local f = CreateFrame("Frame", nil, UIParent)
+            f:SetSize(18, 18)
+            f:SetFrameStrata("TOOLTIP") 
             
-            button.ptRaidIcon = button.ptTweaksFrame:CreateTexture(nil, "OVERLAY")
-            button.ptRaidIcon:SetTexture("Interface\\TargetingFrame\\UI-RaidTargetingIcons")
-            button.ptRaidIcon:SetSize(14, 14)
-            button.ptRaidIcon:SetPoint("TOP", button, "TOP", 0, 6)
+            local rIcon = f:CreateTexture(nil, "OVERLAY")
+            rIcon:SetTexture("Interface\\TargetingFrame\\UI-RaidTargetingIcons")
+            rIcon:SetAllPoints()
+            f.rIcon = rIcon
 
-            button.ptResIcon = button.ptTweaksFrame:CreateTexture(nil, "OVERLAY")
-            button.ptResIcon:SetTexture("Interface\\Icons\\Spell_Holy_Resurrection")
-            button.ptResIcon:SetSize(16, 16)
-            button.ptResIcon:SetPoint("CENTER", button, "CENTER", 0, 0)
-            button.ptResIcon:SetTexCoord(0.08, 0.92, 0.08, 0.92) 
-        end
+            local resIcon = f:CreateTexture(nil, "OVERLAY")
+            resIcon:SetTexture("Interface\\Icons\\Spell_Holy_Resurrection")
+            resIcon:SetAllPoints()
+            resIcon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+            f.resIcon = resIcon
 
-        if PawieTweaksDB.raidMarks then
-            local index = GetRaidTargetIndex(unit)
-            if index then
-                SetRaidTargetIconTexture(button.ptRaidIcon, index)
-                button.ptRaidIcon:Show()
-            else
-                button.ptRaidIcon:Hide()
-            end
-        else
-            button.ptRaidIcon:Hide()
+            overlays[id] = f
         end
-
-        if PawieTweaksDB.showRess and UnitName(unit) and incomingRes[UnitName(unit)] then
-            button.ptResIcon:Show()
-            button.ptResIcon:SetAlpha(0.85)
-        else
-            button.ptResIcon:Hide()
-        end
+        return overlays[id]
     end
 
-    local function UpdateAllRaidFrames()
-        for i = 1, NUM_RAID_PULLOUT_FRAMES or 20 do
-            local pullout = _G["RaidPullout"..i]
-            if pullout and pullout.numPulloutButtons then
-                for j = 1, pullout.numPulloutButtons do
-                    local btn = _G[pullout:GetName().."Button"..j]
-                    if btn and btn:IsShown() then 
-                        UpdatePulloutButtonTweaks(btn) 
+    local timer = 0
+    local updater = CreateFrame("Frame")
+    updater:SetScript("OnUpdate", function(self, elapsed)
+        timer = timer + elapsed
+        if timer < 0.2 then return end -- Uppdaterar 5 gånger i sekunden
+        timer = 0
+
+        -- Göm alla markeringar inför en ny skanning
+        for _, o in pairs(overlays) do o:Hide() end
+
+        if not PawieTweaksDB.raidMarks and not PawieTweaksDB.showRess then return end
+
+        local activeOverlays = 0
+
+        local function ProcessButton(btn)
+            if not btn or not btn:IsVisible() then return end
+            
+            -- Läs vem som är i rutan genom att kolla spelets kod ELLER läsa texten på skärmen
+            local unit = btn:GetAttribute("unit") or btn.unit
+            if not unit or not UnitExists(unit) then
+                local nameFS = btn.name or _G[btn:GetName().."Name"]
+                if nameFS and nameFS.GetText then
+                    local text = nameFS:GetText()
+                    if text then
+                        text = text:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
+                        if text == UnitName("player") then unit = "player"
+                        else
+                            for k=1,4 do if UnitName("party"..k) == text then unit = "party"..k; break end end
+                            if not unit then
+                                for k=1,40 do if UnitName("raid"..k) == text then unit = "raid"..k; break end end
+                            end
+                        end
                     end
                 end
             end
-        end
-    end
 
-    if RaidPulloutButton_Update then
-        hooksecurefunc("RaidPulloutButton_Update", UpdatePulloutButtonTweaks)
-    end
+            if not unit or not UnitExists(unit) then return end
+
+            local mark = GetRaidTargetIndex(unit)
+            local hasRes = incomingRes[UnitName(unit)]
+
+            if (PawieTweaksDB.raidMarks and mark) or (PawieTweaksDB.showRess and hasRes) then
+                activeOverlays = activeOverlays + 1
+                local o = GetOverlay(activeOverlays)
+                
+                -- Den matematiska magin: Hitta rutans exakta koordinater på din bildskärm
+                local x, y = btn:GetCenter()
+                local height = btn:GetHeight()
+                
+                if x and y and height then
+                    o:ClearAllPoints()
+                    -- Klistra fast markeringen OVANFÖR rutan (y + höjden delat på 2 + 4 pixlars marginal)
+                    o:SetPoint("CENTER", UIParent, "BOTTOMLEFT", x, y + (height / 2) + 4)
+                    
+                    if PawieTweaksDB.raidMarks and mark then
+                        local col = (mark - 1) % 4
+                        local row = math.floor((mark - 1) / 4)
+                        o.rIcon:SetTexCoord(col * 0.25, (col + 1) * 0.25, row * 0.25, (row + 1) * 0.25)
+                        o.rIcon:Show()
+                        o.resIcon:Hide()
+                    else
+                        o.rIcon:Hide()
+                        o.resIcon:Show()
+                        o.resIcon:SetAlpha(0.85)
+                    end
+                    o:Show()
+                end
+            end
+        end
+
+        -- Skanna de fasta rutorna
+        for i=1,8 do
+            for j=1,5 do
+                ProcessButton(_G["RaidGroup"..i.."Member"..j])
+            end
+        end
+
+        -- Skanna de utdragna "Group 1", "Group 2" rutorna
+        for i=1,40 do
+            local pullout = _G["RaidPullout"..i]
+            if pullout and pullout:IsVisible() then
+                for j=1,40 do
+                    ProcessButton(_G[pullout:GetName().."Button"..j])
+                end
+            end
+        end
+    end)
 
     local rfFrame = CreateFrame("Frame")
-    rfFrame:RegisterEvent("RAID_TARGET_UPDATE")
-    rfFrame:RegisterEvent("PARTY_MEMBERS_CHANGED")
-    rfFrame:RegisterEvent("RAID_ROSTER_UPDATE")
     rfFrame:RegisterEvent("UNIT_SPELLCAST_START")
     rfFrame:RegisterEvent("UNIT_SPELLCAST_STOP")
     rfFrame:RegisterEvent("UNIT_SPELLCAST_FAILED")
@@ -314,10 +438,9 @@ local function InitRaidFrameTweaks()
                 end
             end
         end
-        UpdateAllRaidFrames()
     end)
     
-    PT.UpdateRaidFrames = UpdateAllRaidFrames
+    PT.UpdateRaidFrames = function() end 
 end
 
 -- ==========================================
@@ -920,11 +1043,40 @@ local function InitUITweaks()
 end
 
 -- ==========================================
--- MODULE: UI Options Menu
+-- MODULE: UI Options Menu & Mass Learn
 -- ==========================================
+local function LearnAllAppearancesInBags()
+    if not C_AppearanceCollection or not C_Appearance then return end
+    local count = 0
+    for b = 0, 4 do
+        for s = 1, GetContainerNumSlots(b) do
+            local itemID = GetContainerItemID(b, s)
+            if itemID then
+                local appID = C_Appearance.GetItemAppearanceID(itemID)
+                if appID and not C_AppearanceCollection.IsAppearanceCollected(appID) then
+                    local guid = GetContainerItemGUID(b, s)
+                    if guid then
+                        C_AppearanceCollection.CollectItemAppearance(guid)
+                        count = count + 1
+                    end
+                end
+            end
+        end
+    end
+    if count > 0 then
+        print("|cff00ff00Pawie Tweaks:|r Mass-learned " .. count .. " new appearances from bags!")
+    else
+        print("|cff00ff00Pawie Tweaks:|r No new appearances found in bags.")
+    end
+end
+
 local function InitMenuAndCommands()
     SLASH_PAWIERELOAD1 = "/rl"
     SlashCmdList["PAWIERELOAD"] = function() ReloadUI() end
+    
+    SLASH_PAWIEITEM1 = "/pi"
+    SlashCmdList["PAWIEITEM"] = function() LearnAllAppearancesInBags() end
+
     SLASH_PAWIETWEAKS1 = "/pawie"
     SlashCmdList["PAWIETWEAKS"] = function(msg)
         msg = string.lower(msg or "")
@@ -960,6 +1112,8 @@ local function InitMenuAndCommands()
         elseif msg == "tmog" then
             PawieTweaksDB.autoTransmog = not PawieTweaksDB.autoTransmog
             print("|cff00ff00Pawie Tweaks:|r Auto-Collect Soulbound Transmogs is now " .. (PawieTweaksDB.autoTransmog and "ON" or "OFF") .. ".")
+        elseif msg == "item" then
+            LearnAllAppearancesInBags()
         else
             print("|cff00ff00Pawie Tweaks Commands:|r")
             print("  |cffffff00/pawie quest|r - Toggles Auto-Quest accept and turn-in.")
@@ -971,6 +1125,7 @@ local function InitMenuAndCommands()
             print("  |cffffff00/pawie marks|r - Toggles Raid Marks on default frames.")
             print("  |cffffff00/pawie ress|r - Toggles Incoming Resurrection tracking.")
             print("  |cffffff00/pawie tmog|r - Toggles auto-learning uncollected Soulbound appearances.")
+            print("  |cffffff00/pawie item|r (or |cffffff00/pi|r) - Mass-learns all uncollected items in bags. |cffff0000(WARNING: Binds BoE items!)|r")
             print("  |cffffff00/rl|r - Reloads the UI.")
         end
     end
