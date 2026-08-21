@@ -23,16 +23,18 @@ You can easily toggle these features on or off via the game's addon menu (`ESC -
 * **Block Duels:** Automatically declines duel requests from players who are not on your friends list or in your guild.
 * **Block Guild Invites:** Blocks random guild invites from strangers.
 * **Hide Action Bar Gryphons:** Removes the two gryphon statues on the left and right sides of your main action bar.
-* **Raid Marks on Default Frames:** Displays raid target icons (Moon, Star, Skull, etc.) centered at the top of the default raid frame portraits.
-* **Show Incoming Ress:** Draws a small resurrection angel icon on raid frames when a healer (or someone using *Millhouse's Regeneration Matrix*) is casting a resurrection on a dead player.
-* **Auto-Transmog (Soulbound):** Silently scans your bags in the background. If it finds a *Soulbound* item with an appearance you haven't collected yet, it automatically learns it for you. (100% safe for BoE items, as it leaves them completely untouched so you can sell them on the AH!).
+* **Raid Marks on Default Frames:** Displays raid target icons (Moon, Star, Skull, etc.) centered at the top of the default raid frame portraits. *(Note: Currently being reworked).*
+* **Show Incoming Ress:** Draws a small resurrection angel icon on raid frames when a healer is casting a resurrection on a dead player.
+* **Auto-Transmog & Bag Icons:** 
+  * Silently scans your bags in the background and automatically learns any uncollected *Soulbound* items. 
+  * Adds a small "shirt" icon to the bottom-left corner of uncollected items in your inventory. Fully compatible with default bags and bag addons like Bagnon!
 
 ---
 
 ## 👻 Background QoL (Always active)
 These are small scripts that run silently in the background to make the game smoother and less annoying.
 
-* **Smart Auto-BG Chat:** If you enter a Battleground and press `Enter` while your chat is set to `/s` (Say), the addon instantly forces the chat to `/bg` so you don't accidentally talk to yourself.
+* **Smart Auto-BG Chat:** If you enter a Battleground and press `Enter` while your chat is set to `/s`, `/p`, or `/ra`, the addon instantly forces the chat to `/bg` so you don't accidentally talk to yourself.
 * **Auto-Buy Quest Items:** If you talk to a vendor and have Auto-Quest enabled, the addon scans the shop for Quest Items (costing up to 30 silver). If you don't already have the item in your bags, it buys exactly 1 automatically.
 * **Chat Copy Button:** Adds a small, unobtrusive button to the top right of your chat windows. Clicking it opens a text box where you can easily highlight and copy text from the chat.
 * **Clickable Invites:** If someone types words like "inv" or "invite" in /say, /whisper, or /guild, the word is turned into a clickable link. Clicking the link instantly invites them to your group.
@@ -56,4 +58,5 @@ Type `/pawie` in chat followed by a command to toggle settings:
 * `/pawie marks` - Toggles Raid Marks on default frames.
 * `/pawie ress` - Toggles Incoming Resurrection tracking.
 * `/pawie tmog` - Toggles auto-learning uncollected Soulbound appearances.
+* `/pawie item` *(or `/pi`)* - Mass-learns all uncollected items currently in your bags. **WARNING: This will bind BoE items to you!**
 * `/rl` - Reloads the UI.
