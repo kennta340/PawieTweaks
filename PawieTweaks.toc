@@ -5,4 +5,4 @@
 ## Version: 1.0
 ## SavedVariables: PawieTweaksDB
 
-Pawie_Tweaks.lua
+PawieTweaks.lua
