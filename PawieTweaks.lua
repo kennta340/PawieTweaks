@@ -12,8 +12,6 @@ local defaultSettings = {
     blockDuels = false,         
     blockGuildInvites = false,
     hideGryphons = true,
-    raidMarks = true,
-    showRess = true,
     autoTransmog = true
 }
 
@@ -163,7 +161,7 @@ local function InitAutoTransmog()
     local scanTimer = 0
     local scanQueued = false
     local iconUpdateTimer = 0
-    local activeTmogButtons = {} -- Radar-listan för alla aktiva ikoner
+    local activeTmogButtons = {} 
     local tmogTooltip = CreateFrame("GameTooltip", "PawieTweaksTmogTooltip", nil, "GameTooltipTemplate")
 
     local function ScanBagsForTransmog()
@@ -224,7 +222,6 @@ local function InitAutoTransmog()
             end
         end
 
-        -- Radarn som stänger av ikoner sekunden du lär dig dom
         iconUpdateTimer = iconUpdateTimer + elapsed
         if iconUpdateTimer > 0.5 then
             iconUpdateTimer = 0
@@ -242,7 +239,6 @@ local function InitAutoTransmog()
                         local itemID = GetContainerItemID(bag, slot)
                         if itemID then
                             local appID = C_Appearance and C_Appearance.GetItemAppearanceID(itemID)
-                            -- Om du HAR lärt dig föremålet nu, släck ikonen!
                             if appID and C_AppearanceCollection and C_AppearanceCollection.IsAppearanceCollected(appID) then
                                 if btn.ptTmogIcon then btn.ptTmogIcon:Hide() end
                                 activeTmogButtons[btn] = nil
@@ -284,7 +280,7 @@ local function InitAutoTransmog()
                             local appID = C_Appearance.GetItemAppearanceID(itemID)
                             if appID and not C_AppearanceCollection.IsAppearanceCollected(appID) then
                                 itemButton.ptTmogIcon:Show()
-                                activeTmogButtons[itemButton] = true -- Sätt knappen på radarn
+                                activeTmogButtons[itemButton] = true
                             end
                         end
                     end
@@ -328,13 +324,456 @@ local function InitAutoTransmog()
                         local appID = C_Appearance.GetItemAppearanceID(itemID)
                         if appID and not C_AppearanceCollection.IsAppearanceCollected(appID) then
                             button.ptTmogIcon:Show()
-                            activeTmogButtons[button] = true -- Sätt knappen på radarn
+                            activeTmogButtons[button] = true
                         end
                     end
                 end
             end
         end)
     end
+end
+
+-- ==========================================
+-- MODULE: Change Any Bag
+-- ==========================================
+local function InitBagUpgrade()
+    local bu = nil 
+    local buFrame = CreateFrame("Frame")
+    local BU_TIMEOUT = 15 
+
+    local function SlotLocked(bag, slot)
+        return select(3, GetContainerItemInfo(bag, slot)) and true or false
+    end
+
+    local function SlotEmpty(bag, slot)
+        return GetContainerItemLink(bag, slot) == nil
+    end
+
+    local function ItemFamily(link)
+        return (link and GetItemFamily(link)) or 0
+    end
+
+    local function FamilyFits(bagFamily, itemFamily)
+        return bagFamily == 0 or itemFamily == 0 or bit.band(bagFamily, itemFamily) ~= 0
+    end
+
+    local function StopBagUpgrade(errMsg)
+        if errMsg then print("|cffff0000Pawie Tweaks:|r " .. errMsg) end
+        bu = nil
+        buFrame:UnregisterEvent("BAG_UPDATE")
+        buFrame:UnregisterEvent("ITEM_LOCK_CHANGED")
+        buFrame:SetScript("OnUpdate", nil)
+    end
+
+    local function StepBagUpgrade()
+        if not bu then return end
+
+        if bu.phase == "moving" then
+            local mv = bu.moves[1]
+            if not mv then
+                bu.phase = "equip"
+                return StepBagUpgrade()
+            end
+            if SlotEmpty(mv.fromBag, mv.fromSlot) then
+                table.remove(bu.moves, 1) 
+                return StepBagUpgrade()
+            end
+            if SlotLocked(mv.fromBag, mv.fromSlot) or SlotLocked(mv.toBag, mv.toSlot) then
+                return 
+            end
+            PickupContainerItem(mv.fromBag, mv.fromSlot)
+            PickupContainerItem(mv.toBag, mv.toSlot)
+            return
+
+        elseif bu.phase == "equip" then
+            if GetInventoryItemLink("player", bu.targetInvSlot) ~= bu.oldBagLink then
+                bu.phase = "park"
+                return StepBagUpgrade()
+            end
+            if CursorHasItem() then return end
+            if SlotLocked(bu.newBag, bu.newSlot) then return end
+            PickupContainerItem(bu.newBag, bu.newSlot) 
+            PutItemInBag(bu.targetInvSlot) 
+            return
+
+        elseif bu.phase == "park" then
+            if not CursorHasItem() then
+                StopBagUpgrade() 
+                print("|cff00ff00Pawie Tweaks:|r Bag swap complete!")
+                return
+            end
+            if SlotLocked(bu.parkBag, bu.parkSlot) or not SlotEmpty(bu.parkBag, bu.parkSlot) then
+                return
+            end
+            PickupContainerItem(bu.parkBag, bu.parkSlot)
+            StopBagUpgrade()
+            print("|cff00ff00Pawie Tweaks:|r Bag swap complete!")
+        end
+    end
+
+    buFrame:SetScript("OnEvent", StepBagUpgrade)
+
+    local buElapsed = 0
+    local function BuWatchdog(_, elapsed)
+        buElapsed = buElapsed + elapsed
+        if buElapsed > BU_TIMEOUT then
+            buElapsed = 0
+            StopBagUpgrade("Bag swap timed out.")
+        end
+    end
+
+    local function StartBagUpgrade(state)
+        bu = state
+        buElapsed = 0
+        buFrame:RegisterEvent("BAG_UPDATE")
+        buFrame:RegisterEvent("ITEM_LOCK_CHANGED")
+        buFrame:SetScript("OnUpdate", BuWatchdog)
+        StepBagUpgrade()
+    end
+
+    local function TryBagUpgrade(bag, slot)
+        if bu then return false end 
+        if InCombatLockdown() then return false end
+        if BankFrame and BankFrame:IsShown() then return false end 
+        if MerchantFrame and MerchantFrame:IsShown() then return false end 
+
+        local link = GetContainerItemLink(bag, slot)
+        if not link then return false end
+        local _, _, _, _, _, _, _, _, equipLoc = GetItemInfo(link)
+        if equipLoc ~= "INVTYPE_BAG" then return false end
+
+        for bagID = 1, NUM_BAG_SLOTS do
+            if GetContainerNumSlots(bagID) == 0 then return false end
+        end
+
+        local targetBag, targetSlots
+        for bagID = 1, NUM_BAG_SLOTS do
+            local n = GetContainerNumSlots(bagID)
+            if not targetSlots or n < targetSlots then
+                targetBag, targetSlots = bagID, n
+            end
+        end
+        if not targetBag then return false end
+
+        local freeSlots = {} 
+        for bagID = 0, NUM_BAG_SLOTS do
+            if bagID ~= targetBag then
+                local bagFamily = 0
+                if bagID > 0 then
+                    bagFamily = ItemFamily(GetInventoryItemLink("player", ContainerIDToInventoryID(bagID)))
+                end
+                for s = 1, GetContainerNumSlots(bagID) do
+                    if SlotEmpty(bagID, s) then
+                        table.insert(freeSlots, { bag = bagID, slot = s, family = bagFamily })
+                    end
+                end
+            end
+        end
+
+        local newBag, newSlot = bag, slot
+        local moves, usedFree = {}, {}
+        local ok = true
+        local itemsToMove = 0
+
+        for s = 1, targetSlots do
+            local itemLink = GetContainerItemLink(targetBag, s)
+            if itemLink then
+                itemsToMove = itemsToMove + 1
+                local family = ItemFamily(itemLink)
+                local dest
+                for i, free in ipairs(freeSlots) do
+                    if not usedFree[i] and FamilyFits(free.family, family) then
+                        dest, usedFree[i] = free, true
+                        break
+                    end
+                end
+                if not dest then ok = false break end
+                table.insert(moves, { fromBag = targetBag, fromSlot = s, toBag = dest.bag, toSlot = dest.slot })
+                if targetBag == bag and s == slot then
+                    newBag, newSlot = dest.bag, dest.slot
+                end
+            end
+        end
+
+        local parkBag, parkSlot
+        if ok then
+            for i, free in ipairs(freeSlots) do
+                if not usedFree[i] and free.family == 0 then 
+                    parkBag, parkSlot = free.bag, free.slot
+                    usedFree[i] = true
+                    break
+                end
+            end
+            if not parkBag then ok = false end
+        end
+
+        if not ok then
+            local neededSlots = itemsToMove + 1
+            print("|cffff0000Pawie Tweaks:|r Auto-swap failed: You need at least " .. neededSlots .. " empty slots in your other bags to clear your smallest bag!")
+            return true
+        end
+
+        print("|cff00ff00Pawie Tweaks:|r Change Any Bag initiated! Moving items...")
+        StartBagUpgrade({
+            phase = "moving",
+            moves = moves,
+            targetBag = targetBag,
+            targetInvSlot = ContainerIDToInventoryID(targetBag),
+            oldBagLink = GetInventoryItemLink("player", ContainerIDToInventoryID(targetBag)),
+            newBag = newBag,
+            newSlot = newSlot,
+            parkBag = parkBag,
+            parkSlot = parkSlot,
+        })
+        return true
+    end
+
+    hooksecurefunc("UseContainerItem", function(bag, slot)
+        TryBagUpgrade(bag, slot)
+    end)
+end
+
+-- ==========================================
+-- MODULE: Auto Quest
+-- ==========================================
+local function InitAutoQuest()
+    local questFrame = CreateFrame("Frame")
+    questFrame:RegisterEvent("QUEST_GREETING")
+    questFrame:RegisterEvent("GOSSIP_SHOW")
+    questFrame:RegisterEvent("QUEST_DETAIL")
+    questFrame:RegisterEvent("QUEST_ACCEPT_CONFIRM")
+    questFrame:RegisterEvent("QUEST_PROGRESS")
+    questFrame:RegisterEvent("QUEST_COMPLETE")
+    questFrame:RegisterEvent("MERCHANT_SHOW")
+    questFrame:RegisterEvent("MERCHANT_UPDATE")
+    questFrame:RegisterEvent("MERCHANT_CLOSED")
+    
+    local processingEvent = false
+    local PT_AutoBought = {}
+    local scanTooltip = CreateFrame("GameTooltip", "PawieTweaksScanTooltip", nil, "GameTooltipTemplate")
+
+    local playerClassLocalized, playerClassEnglish = UnitClass("player")
+    local optimalArmor = "None"
+    local isClassless = false
+    
+    if playerClassEnglish == "HERO" or playerClassLocalized == "Hero" then
+        isClassless = true
+    elseif playerClassEnglish == "WARRIOR" or playerClassEnglish == "PALADIN" or playerClassEnglish == "DEATHKNIGHT" then
+        optimalArmor = "Plate"
+    elseif playerClassEnglish == "HUNTER" or playerClassEnglish == "SHAMAN" then
+        optimalArmor = "Mail"
+    elseif playerClassEnglish == "ROGUE" or playerClassEnglish == "DRUID" then
+        optimalArmor = "Leather"
+    elseif playerClassEnglish == "MAGE" or playerClassEnglish == "PRIEST" or playerClassEnglish == "WARLOCK" then
+        optimalArmor = "Cloth"
+    end
+
+    questFrame:SetScript("OnEvent", function(self, ev)
+        if ev == "MERCHANT_CLOSED" then
+            PT_AutoBought = {}
+            return
+        end
+        
+        if ev == "MERCHANT_SHOW" or ev == "MERCHANT_UPDATE" then
+            if not PawieTweaksDB.autoQuest then return end
+            if IsShiftKeyDown() then return end
+            
+            local numItems = GetMerchantNumItems()
+            for i = 1, numItems do
+                local link = GetMerchantItemLink(i)
+                if link then
+                    local itemID = tonumber(link:match("item:(%d+)"))
+                    if itemID and not PT_AutoBought[itemID] then
+                        local _, _, price, _, _, _, extendedCost = GetMerchantItemInfo(i)
+                        if price and price <= 3000 and not extendedCost then
+                            local isQuestItem = false
+                            local itemName, _, _, _, _, itemType = GetItemInfo(link)
+                            
+                            if itemName and (itemType == "Quest" or itemType == "Quest Item") then
+                                isQuestItem = true
+                            else
+                                scanTooltip:SetOwner(UIParent, "ANCHOR_NONE")
+                                scanTooltip:ClearLines()
+                                scanTooltip:SetMerchantItem(i)
+                                for line = 1, scanTooltip:NumLines() do
+                                    local textL = _G["PawieTweaksScanTooltipTextLeft"..line]
+                                    if textL then
+                                        local text = textL:GetText()
+                                        if text and (text == "Quest Item" or text == ITEM_BIND_QUEST) then
+                                            isQuestItem = true
+                                            break
+                                        end
+                                    end
+                                end
+                                scanTooltip:Hide()
+                            end
+
+                            if isQuestItem then
+                                if GetItemCount(itemID) == 0 then
+                                    BuyMerchantItem(i, 1)
+                                    print("|cff00ff00Pawie Tweaks:|r Auto-bought quest item: " .. link)
+                                end
+                                PT_AutoBought[itemID] = true
+                            end
+                        end
+                    end
+                end
+            end
+            return
+        end
+
+        if not PawieTweaksDB.autoQuest then return end
+        if IsShiftKeyDown() then return end 
+        if processingEvent then return end
+        
+        local npcName = string.lower(UnitName("npc") or "")
+        local targetName = string.lower(UnitName("target") or "")
+        if npcName:match("board") or targetName:match("board") or npcName:match("hero's call") or targetName:match("hero's call") then 
+            return 
+        end
+        
+        processingEvent = true
+        
+        if ev == "QUEST_GREETING" then
+            local numActive = GetNumActiveQuests()
+            for i = 1, numActive do 
+                local _, isComplete = GetActiveTitle(i)
+                if isComplete then 
+                    SelectActiveQuest(i)
+                    processingEvent = false
+                    return 
+                end
+            end
+            local numAvailable = GetNumAvailableQuests()
+            if numAvailable > 0 then 
+                SelectAvailableQuest(1)
+                processingEvent = false
+                return 
+            end
+            
+        elseif ev == "GOSSIP_SHOW" then
+            local active = {GetGossipActiveQuests()}
+            if #active > 0 then
+                local qIndex = 1
+                local i = 1
+                while i <= #active do
+                    local nextQ = i + 1
+                    while nextQ <= #active do
+                        if type(active[nextQ]) == "string" and type(active[nextQ+1]) == "number" then
+                            break
+                        end
+                        nextQ = nextQ + 1
+                    end
+                    
+                    local isComplete = active[i+3]
+                    if isComplete == true or isComplete == 1 then
+                        SelectGossipActiveQuest(qIndex)
+                        processingEvent = false
+                        return
+                    end
+                    
+                    qIndex = qIndex + 1
+                    i = nextQ
+                end
+            end
+            
+            local available = {GetGossipAvailableQuests()}
+            if #available > 0 then 
+                SelectGossipAvailableQuest(1)
+                processingEvent = false
+                return 
+            end
+            
+            local options = {GetGossipOptions()}
+            if #options == 2 and options[2] == "vendor" then
+                SelectGossipOption(1)
+                processingEvent = false
+                return
+            end
+            
+        elseif ev == "QUEST_DETAIL" then
+            local objective = string.lower(GetObjectiveText() or "")
+            local text = string.lower(GetQuestText() or "")
+            if string.find(objective, "escort") or string.find(objective, "protect") or string.find(text, "escort") then
+                print("|cff00ff00Pawie Tweaks:|r Escort quest detected. Auto-accept paused.")
+            else 
+                AcceptQuest() 
+            end
+            
+        elseif ev == "QUEST_ACCEPT_CONFIRM" then
+            print("|cff00ff00Pawie Tweaks:|r Event warning detected. Auto-accept paused.")
+        elseif ev == "QUEST_PROGRESS" then
+            if IsQuestCompletable() then CompleteQuest() end
+        elseif ev == "QUEST_COMPLETE" then
+            local choices = GetNumQuestChoices() or 0
+            if choices <= 1 then 
+                GetQuestReward(choices) 
+            elseif PawieTweaksDB.autoQuestReward then
+                local bestIndex = nil
+                local bestValue = -1
+                local isSafeToPick = true
+                local foundOptimalArmor = false
+                
+                for i = 1, choices do
+                    local itemLink = GetQuestItemLink("choice", i)
+                    if itemLink then
+                        local _, _, rarity, _, _, itemType, itemSubType, _, _, _, itemSellPrice = GetItemInfo(itemLink)
+                        
+                        if rarity and rarity > 1 then
+                            isSafeToPick = false
+                            break
+                        end
+                        
+                        local sellPrice = itemSellPrice or 0
+                        
+                        if isClassless then
+                            if sellPrice > bestValue then
+                                bestValue = sellPrice
+                                bestIndex = i
+                            end
+                        else
+                            if itemType == "Armor" then
+                                local isOptimal = false
+                                
+                                if itemSubType == optimalArmor then
+                                    isOptimal = true
+                                elseif UnitLevel("player") < 40 then
+                                    if optimalArmor == "Plate" and itemSubType == "Mail" then isOptimal = true end
+                                    if optimalArmor == "Mail" and itemSubType == "Leather" then isOptimal = true end
+                                end
+
+                                if isOptimal then
+                                    if foundOptimalArmor then
+                                        if sellPrice > bestValue then
+                                            bestValue = sellPrice
+                                            bestIndex = i
+                                        end
+                                    else
+                                        foundOptimalArmor = true
+                                        bestValue = sellPrice
+                                        bestIndex = i
+                                    end
+                                end
+                            end
+                            
+                            if not foundOptimalArmor then
+                                if sellPrice > bestValue then
+                                    bestValue = sellPrice
+                                    bestIndex = i
+                                end
+                            end
+                        end
+                    end
+                end
+                
+                if isSafeToPick and bestIndex then
+                    GetQuestReward(bestIndex)
+                end
+            end
+        end
+
+        processingEvent = false
+    end)
 end
 
 -- ==========================================
